@@ -1,10 +1,14 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import { SEVERITY_LEVELS } from '../constants/hazards';
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
 const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
 const TILE_URL    = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 
+/**
+ * Loads Leaflet once, calling onReady when window.L is available.
+ * Guards against duplicate script tags from React StrictMode double-invocation.
+ */
 function loadLeaflet(onReady) {
   if (window.L) { onReady(); return; }
 
@@ -15,6 +19,15 @@ function loadLeaflet(onReady) {
     document.head.appendChild(link);
   }
 
+  // If a script tag already exists (StrictMode second run), poll instead of
+  // adding a duplicate — duplicate tags cause the onload to fire on old refs.
+  if (document.querySelector(`script[src="${LEAFLET_JS}"]`)) {
+    const poll = setInterval(() => {
+      if (window.L) { clearInterval(poll); onReady(); }
+    }, 30);
+    return;
+  }
+
   const script = Object.assign(document.createElement('script'), {
     src: LEAFLET_JS, onload: onReady,
   });
@@ -22,24 +35,25 @@ function loadLeaflet(onReady) {
 }
 
 /**
- * Initialises a Leaflet map on the provided ref, syncs markers to
- * filteredWarnings, and flies to selectedWarning when it changes.
- *
- * @param {Array}    filteredWarnings
- * @param {Object}   selectedWarning
- * @param {Function} onCircleClick     – called with a warning object
+ * Initialises a Leaflet map, syncs hazard circles to filteredWarnings,
+ * highlights the selected warning with stronger styling, and flies to it.
  */
 export function useLeafletMap(filteredWarnings, selectedWarning, onCircleClick) {
-  const mapRef     = useRef(null);   // DOM ref – returned and attached in MapView
-  const mapInstance = useRef(null);  // Leaflet map instance
-  const markers     = useRef([]);    // Current circle layers
+  const mapRef      = useRef(null);
+  const mapInstance = useRef(null);
+  const markersRef  = useRef([]);
+  const [mapReady, setMapReady] = useState(false);
 
-  // ── Initialise map ──────────────────────────────────────────────────────────
+  // ── Initialise / tear down map ────────────────────────────────────────────
+  // The cleanup function handles React StrictMode's mount→unmount→remount cycle,
+  // ensuring the map is rebuilt on the correct DOM element each time.
   useEffect(() => {
     if (!mapRef.current) return;
 
+    let cancelled = false;
+
     loadLeaflet(() => {
-      if (mapInstance.current) return;
+      if (cancelled || mapInstance.current || !mapRef.current) return;
 
       const map = window.L.map(mapRef.current, {
         zoomControl:        false,
@@ -50,41 +64,84 @@ export function useLeafletMap(filteredWarnings, selectedWarning, onCircleClick) 
       window.L.control.zoom({ position: 'bottomright' }).addTo(map);
 
       mapInstance.current = map;
+
+      // Signal ready only after the SVG renderer has computed its bounds —
+      // adding circles before this fires causes the _updateCircle crash.
+      map.whenReady(() => {
+        if (!cancelled) setMapReady(true);
+      });
     });
-  }, []);
 
-  // ── Sync markers when filteredWarnings changes ───────────────────────────────
+    return () => {
+      cancelled = true;
+      markersRef.current = [];
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
+      setMapReady(false);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Draw / redraw circles on filter or selection change ──────────────────
   useEffect(() => {
-    if (!mapInstance.current || !window.L) return;
+    if (!mapReady || !mapInstance.current || !window.L) return;
 
-    markers.current.forEach(layer => mapInstance.current.removeLayer(layer));
-    markers.current = [];
+    // Clear old circles
+    markersRef.current.forEach(layer => {
+      try { mapInstance.current.removeLayer(layer); } catch (_) {}
+    });
+    markersRef.current = [];
+
+    if (filteredWarnings.length === 0) return;
+
+    const latLngs = [];
 
     filteredWarnings.forEach(w => {
-      const { color } = SEVERITY_LEVELS[w.severity];
+      const isSelected = selectedWarning?.id === w.id;
+      const { color }  = SEVERITY_LEVELS[w.severity];
+
       const circle = window.L.circle([w.lat, w.lng], {
         color,
         fillColor:   color,
-        fillOpacity: 0.25,
-        radius:      w.radius * 50_000,
-        weight:      2,
+        fillOpacity: isSelected ? 0.5  : 0.2,
+        radius:      w.radius * 50_000 * (isSelected ? 1.15 : 1),
+        weight:      isSelected ? 3    : 1.5,
       }).addTo(mapInstance.current);
 
       circle.on('click', () => onCircleClick(w));
-      markers.current.push(circle);
-    });
-  }, [filteredWarnings, onCircleClick]);
 
-  // ── Fly to selected warning ──────────────────────────────────────────────────
-  useEffect(() => {
-    if (selectedWarning && mapInstance.current) {
-      mapInstance.current.flyTo(
-        [selectedWarning.lat, selectedWarning.lng],
-        7,
-        { duration: 1.5 },
-      );
+      if (isSelected) {
+        circle.bringToFront();
+        circle.bindTooltip(w.region, {
+          permanent:  true,
+          direction:  'center',
+          className:  'mw-tooltip',
+          opacity:    1,
+        }).openTooltip();
+      }
+
+      markersRef.current.push(circle);
+      latLngs.push([w.lat, w.lng]);
+    });
+
+    // Fit map to all visible warnings when no specific one is selected
+    if (!selectedWarning && latLngs.length > 0) {
+      try {
+        mapInstance.current.fitBounds(latLngs, { padding: [70, 70], maxZoom: 7 });
+      } catch (_) {}
     }
-  }, [selectedWarning]);
+  }, [mapReady, filteredWarnings, selectedWarning, onCircleClick]);
+
+  // ── Fly to selected warning ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapReady || !selectedWarning || !mapInstance.current) return;
+    mapInstance.current.flyTo(
+      [selectedWarning.lat, selectedWarning.lng],
+      7,
+      { duration: 1.2 },
+    );
+  }, [mapReady, selectedWarning]);
 
   const resetView = useCallback(() => {
     mapInstance.current?.flyTo([50, 15], 4, { duration: 1.2 });

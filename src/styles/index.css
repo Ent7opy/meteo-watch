@@ -71,3 +71,27 @@
   background-color: #252b36 !important;
   color: white !important;
 }
+
+/* ── Selected-warning tooltip label on map ── */
+.mw-tooltip {
+  background: rgba(20, 23, 30, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px !important;
+  color: #f1f5f9 !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  padding: 4px 8px !important;
+  white-space: nowrap !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+  pointer-events: none !important;
+}
+.mw-tooltip::before { display: none !important; }
+
+/* Make interactive circles more obvious on hover */
+.leaflet-interactive:hover {
+  opacity: 0.85;
+  cursor: pointer;
+}
