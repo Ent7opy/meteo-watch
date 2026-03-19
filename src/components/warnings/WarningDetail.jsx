@@ -88,6 +88,7 @@ export function WarningDetail({ warning, onClose }) {
               Metadata
             </button>
             <button
+              onClick={() => warning.sourceUrl && window.open(warning.sourceUrl, '_blank', 'noopener,noreferrer')}
               style={{ backgroundColor: sev.color }}
               className="
                 flex-1 py-2.5 rounded-xl text-black
