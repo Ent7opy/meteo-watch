@@ -313,11 +313,15 @@ function parseFeed(parsed, countrySlug) {
       return v != null ? String(v) : '';
     };
 
-    const severity   = get('severity');
-    const onset      = get('onset');
-    const expires    = get('expires');
-    const areaDesc   = get('areaDesc');
-    const event      = get('event');
+    const severity    = get('severity');
+    const onset       = get('onset');
+    const expires     = get('expires');
+    const areaDesc    = get('areaDesc');
+    const event       = get('event');
+    const urgency     = get('urgency');
+    const certainty   = get('certainty');
+    const responseType = get('responseType');
+    const identifier  = get('identifier');
 
     // Skip warnings that have already expired
     if (expires && new Date(expires) < now) continue;
@@ -332,7 +336,7 @@ function parseFeed(parsed, countrySlug) {
     const nutsCode = String(geocode?.value ?? areaDesc);
     // Use the Atom entry id (URL with index_area/index_polygon params) as the unique key.
     // cap:identifier is shared across entries for the same alert; entry.id is always unique.
-    const id = String(entry.id ?? `${get('identifier') || countrySlug}-${nutsCode}`);
+    const id = String(entry.id ?? `${identifier || countrySlug}-${nutsCode}`);
 
     const geo = approxGeo(provider.code, String(nutsCode));
 
@@ -346,13 +350,21 @@ function parseFeed(parsed, countrySlug) {
       region:      areaDesc,
       country:     provider.code,
       provider:    provider.name,
-      start:       onset   || now.toISOString(),
-      end:         expires || new Date(now.getTime() + 86_400_000).toISOString(),
+      start:        onset   || now.toISOString(),
+      end:          expires || new Date(now.getTime() + 86_400_000).toISOString(),
       description,
-      lat:         geo.lat,
-      lng:         geo.lng,
-      radius:      0.8,
-      sourceUrl:   feedUrl,
+      lat:          geo.lat,
+      lng:          geo.lng,
+      radius:       0.8,
+      sourceUrl:    feedUrl,
+      meta: {
+        urgency:      urgency      || null,
+        certainty:    certainty    || null,
+        responseType: responseType || null,
+        nutsCode:     nutsCode     || null,
+        identifier:   identifier   || null,
+        messageType:  status       || null,
+      },
     });
   }
 

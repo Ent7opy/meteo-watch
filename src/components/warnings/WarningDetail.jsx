@@ -1,4 +1,5 @@
-import { X, Clock, Info, TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
+import { X, Clock, Info, TriangleAlert, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react';
 import { SEVERITY_LEVELS, HAZARD_TYPES } from '../../constants/hazards';
 import { formatDateTime, formatEndLabel } from '../../utils/formatters';
 
@@ -6,9 +7,11 @@ import { formatDateTime, formatEndLabel } from '../../utils/formatters';
  * Floating detail card shown over the map when a warning is selected.
  */
 export function WarningDetail({ warning, onClose }) {
+  const [showMeta, setShowMeta] = useState(false);
+
   if (!warning) return null;
 
-  const sev      = SEVERITY_LEVELS[warning.severity];
+  const sev        = SEVERITY_LEVELS[warning.severity];
   const HazardIcon = HAZARD_TYPES.find(h => h.id === warning.type)?.icon ?? TriangleAlert;
 
   return (
@@ -78,14 +81,35 @@ export function WarningDetail({ warning, onClose }) {
             </p>
           </div>
 
+          {/* Metadata panel */}
+          {showMeta && warning.meta && (
+            <div className="mb-4 rounded-xl border border-white/8 bg-white/[0.03] overflow-hidden">
+              <div className="grid grid-cols-2 divide-x divide-y divide-white/[0.06]">
+                <MetaCell label="Urgency"       value={warning.meta.urgency} />
+                <MetaCell label="Certainty"     value={warning.meta.certainty} />
+                <MetaCell label="Response"      value={warning.meta.responseType} />
+                <MetaCell label="Msg Type"      value={warning.meta.messageType} />
+                <MetaCell label="NUTS3 Code"    value={warning.meta.nutsCode} mono />
+                <MetaCell label="Identifier"    value={warning.meta.identifier} mono truncate />
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex gap-2">
-            <button className="
-              flex-1 py-2.5 bg-white/5 hover:bg-white/[0.08] rounded-xl
-              text-[10px] font-mono font-bold uppercase tracking-widest
-              border border-white/10 transition-all
-            ">
+            <button
+              onClick={() => setShowMeta(v => !v)}
+              className="
+                flex-1 py-2.5 bg-white/5 hover:bg-white/[0.08] rounded-xl
+                text-[10px] font-mono font-bold uppercase tracking-widest
+                border border-white/10 transition-all
+                flex items-center justify-center gap-1.5
+              "
+            >
               Metadata
+              {showMeta
+                ? <ChevronUp  className="w-3 h-3 opacity-60" />
+                : <ChevronDown className="w-3 h-3 opacity-60" />}
             </button>
             <button
               onClick={() => warning.sourceUrl && window.open(warning.sourceUrl, '_blank', 'noopener,noreferrer')}
@@ -93,11 +117,12 @@ export function WarningDetail({ warning, onClose }) {
               className="
                 flex-1 py-2.5 rounded-xl text-black
                 text-[10px] font-mono font-bold uppercase tracking-widest
-                hover:brightness-110 transition-all
-                shadow-lg
+                hover:brightness-110 transition-all shadow-lg
+                flex items-center justify-center gap-1.5
               "
             >
               Source Feed
+              <ExternalLink className="w-3 h-3 opacity-70" />
             </button>
           </div>
         </div>
@@ -114,6 +139,19 @@ function TimeBlock({ label, value }) {
         <span className="text-[9px] font-mono font-bold uppercase tracking-widest">{label}</span>
       </div>
       <p className="text-xs font-medium text-slate-200 leading-snug">{value}</p>
+    </div>
+  );
+}
+
+function MetaCell({ label, value, mono, truncate }) {
+  const displayValue = value || '—';
+  return (
+    <div className="p-3">
+      <p className="text-[9px] font-mono font-bold uppercase tracking-widest text-slate-600 mb-1">{label}</p>
+      <p className={`text-[11px] text-slate-300 ${mono ? 'font-mono' : ''} ${truncate ? 'truncate' : ''}`}
+         title={truncate ? displayValue : undefined}>
+        {displayValue}
+      </p>
     </div>
   );
 }
